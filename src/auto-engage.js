@@ -97,49 +97,84 @@ async function processNewPosts(page, config) {
   await page.evaluate(() => window.scrollBy(0, 700));
   await randomDelay(1, 2);
 
-  // Find all Like buttons on the page using $$ to get ElementHandles
-  const selectors = [
-    'div[aria-label="Thích"][role="button"]',
-    'div[aria-label="Like"][role="button"]',
-    'div[aria-label*="Gỡ Thích"]',
-    'div[aria-label*="Remove Like"]',
-    'div[aria-label*="Gỡ Yêu thích"]',
-    'div[aria-label*="Remove Love"]'
-  ];
+  // Tìm bài viết mới nhất và xác định nút Like của Fanpage
+  const targetLikeBtnInfo = await page.evaluate(() => {
+      // Tìm tất cả các bài viết (feed units)
+      const feedUnits = document.querySelectorAll('[aria-posinset]');
+      for (const unit of feedUnits) {
+          // Lên vài cấp để bao trọn cả bài viết (phòng trường hợp action bar nằm ngoài thẻ aria-posinset một chút)
+          let wrapper = unit;
+          for(let i=0; i<3; i++) {
+             if(wrapper.parentElement) wrapper = wrapper.parentElement;
+          }
+          
+          const likeBtns = wrapper.querySelectorAll(
+              'div[aria-label="Thích"][role="button"], ' +
+              'div[aria-label="Like"][role="button"], ' +
+              'div[aria-label*="Gỡ Thích"], ' +
+              'div[aria-label*="Remove Like"], ' +
+              'div[aria-label*="Gỡ Yêu thích"], ' +
+              'div[aria-label*="Remove Love"]'
+          );
+          
+          if (likeBtns.length === 0) continue;
+          
+          // Lọc bỏ các nút Like CỦA BÌNH LUẬN (Comment Like buttons).
+          // Nút Like của bài viết thường to (height ~ 32px), không nằm trong thẻ <ul> hay <li>.
+          // Nút Like của bình luận là dạng text nhỏ (height ~ 12px-16px) và thường nằm trong <ul>/<li>.
+          const validPostLikeBtns = Array.from(likeBtns).filter(btn => {
+              const r = btn.getBoundingClientRect();
+              if (r.height < 24) return false; // Loại bỏ nút quá nhỏ (nút của comment)
+              
+              // Kiểm tra xem có nằm trong danh sách bình luận không
+              let cur = btn;
+              for(let i=0; i<8; i++) {
+                 if(!cur) break;
+                 const tag = cur.tagName.toLowerCase();
+                 if(tag === 'li' || tag === 'ul') return false;
+                 cur = cur.parentElement;
+              }
+              return true;
+          });
+          
+          if (validPostLikeBtns.length === 0) continue;
+          
+          // Lấy nút Like NGOÀI CÙNG của BÀI VIẾT (thuộc về Fanpage hiện tại chứ không phải bài bị share bên trong).
+          // Nút ngoài cùng luôn nằm ở cuối cùng trong DOM của bài viết đó.
+          const targetBtn = validPostLikeBtns[validPostLikeBtns.length - 1];
+          
+          const rect = targetBtn.getBoundingClientRect();
+          if (rect.width === 0) continue;
+          
+          const absoluteY = rect.top + window.scrollY;
+          
+          // Bỏ qua nút Like nằm trong header/avatar
+          if (absoluteY < 600) continue;
+          
+          // Đánh dấu nút này để Puppeteer lấy ElementHandle ở bước sau
+          targetBtn.setAttribute('data-bot-target', 'true');
+          
+          return {
+             y: absoluteY,
+             label: targetBtn.getAttribute('aria-label')
+          };
+      }
+      return null;
+  });
   
-  const likeButtons = await page.$$(selectors.join(', '));
-  
-  // --- Chỉ quan tâm đến bài viết MỚI NHẤT (nút Like đầu tiên hợp lệ) ---
-  let targetLikeButton = null;
-  let targetPostUrl = null;
-  
-  for (const btn of likeButtons) {
-      const box = await btn.boundingBox();
-      if (!box || box.width === 0) continue;
-      
-      const absoluteY = await page.evaluate((el) => {
-          return el.getBoundingClientRect().top + window.scrollY;
-      }, btn);
-      
-      // Bỏ qua nút Like nằm trong header/avatar
-      if (absoluteY < 600) continue;
-      
-      // Đây là nút Like đầu tiên hợp lệ = bài viết MỚI NHẤT
-      targetLikeButton = btn;
-      break;
-  }
-  
-  if (!targetLikeButton) {
+  if (!targetLikeBtnInfo) {
       log("Không tìm thấy nút Like của bài viết nào trên trang. Có thể do mạng chậm, hãy thử lại.", "warn");
       return;
   }
   
   // Kiểm tra bài mới nhất đã được tương tác chưa
-  const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), targetLikeButton);
-  if (ariaLabel.includes('Gỡ') || ariaLabel.includes('Remove')) {
+  if (targetLikeBtnInfo.label.includes('Gỡ') || targetLikeBtnInfo.label.includes('Remove')) {
       log("Bài viết MỚI NHẤT đã được tương tác rồi. Không làm gì thêm.", "info");
       return;
   }
+  
+  // Lấy ElementHandle của nút Like đã được đánh dấu
+  const targetLikeButton = await page.$('[data-bot-target="true"]');
   
   // Trích xuất URL bài viết để lưu lịch sử
   targetPostUrl = await page.evaluate((el) => {
