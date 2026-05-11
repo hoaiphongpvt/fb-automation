@@ -3,10 +3,8 @@ const path = require("path");
 const readline = require("readline");
 const puppeteer = require("puppeteer");
 
-const { log, randomDelay, randomChoice } = require("./utils");
+const { log, randomDelay, randomChoice, extractPostId } = require("./utils");
 const store = require("./store");
-const { fetchNewPosts } = require("./monitor");
-const { reactToPost, commentOnPost } = require("./actions");
 
 const CONFIG_PATH = path.resolve(__dirname, "..", "config.json");
 const PROFILE_DIR = path.resolve(__dirname, "..", ".browser-profile");
@@ -84,12 +82,20 @@ async function processNewPosts(page, config) {
   await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
   await randomDelay(4, 6);
 
-  // Scroll to trigger lazy loading of the actual feed
-  log("Đang scroll để tải bài viết...", "info");
-  for (let i = 0; i < 4; i++) {
-    await page.evaluate(() => window.scrollBy(0, 600));
-    await randomDelay(1.5, 2.5);
+  // Cuộn xuống một chút để kích hoạt tải feed, rồi cuộn ngược lên đầu trang
+  // Lý do: Facebook dùng virtual DOM - khi cuộn xuống quá xa, bài viết mới nhất
+  // ở trên cùng sẽ bị XÓA khỏi DOM để tiết kiệm bộ nhớ.
+  log("Đang tải feed...", "info");
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => window.scrollBy(0, 800));
+    await randomDelay(1.5, 2);
   }
+  // Cuộn về đầu trang để bài mới nhất hiện trong DOM
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await randomDelay(2, 3);
+  // Cuộn xuống vừa đủ để qua phần header/ảnh bìa và thấy bài đầu tiên
+  await page.evaluate(() => window.scrollBy(0, 700));
+  await randomDelay(1, 2);
 
   // Find all Like buttons on the page using $$ to get ElementHandles
   const selectors = [
@@ -103,62 +109,55 @@ async function processNewPosts(page, config) {
   
   const likeButtons = await page.$$(selectors.join(', '));
   
+  // --- Chỉ quan tâm đến bài viết MỚI NHẤT (nút Like đầu tiên hợp lệ) ---
   let targetLikeButton = null;
   let targetPostUrl = null;
-  let skippedCount = 0;
   
   for (const btn of likeButtons) {
       const box = await btn.boundingBox();
       if (!box || box.width === 0) continue;
       
-      // Get absolute Y
       const absoluteY = await page.evaluate((el) => {
           return el.getBoundingClientRect().top + window.scrollY;
       }, btn);
       
-      // Skip header/avatar Like buttons if any
-      if (absoluteY < 600) continue; 
+      // Bỏ qua nút Like nằm trong header/avatar
+      if (absoluteY < 600) continue;
       
-      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), btn);
-      
-      if (ariaLabel.includes('Gỡ') || ariaLabel.includes('Remove')) {
-          log("Đã tìm thấy 1 bài viết nhưng BỎ QUA vì phát hiện bạn đã tương tác (có nút Gỡ Thích/Gỡ Yêu thích).", "info");
-          skippedCount++;
-          continue;
-      }
-      
-      // We found the first un-interacted Like button!
+      // Đây là nút Like đầu tiên hợp lệ = bài viết MỚI NHẤT
       targetLikeButton = btn;
-      
-      // Try to extract its post URL for record keeping
-      targetPostUrl = await page.evaluate((el) => {
-          let container = el;
-          for (let i=0; i<10; i++) {
-              if (container.parentElement) container = container.parentElement;
-          }
-          const links = container.querySelectorAll('a[href]');
-          for (const link of links) {
-              const href = link.getAttribute('href');
-              if (href.includes('/posts/') || href.includes('/photo/') || href.includes('fbid=') || href.includes('/videos/') || href.includes('/reel/')) {
-                  if (!href.includes('set=pb.') && !href.includes('set=a.') && !href.includes('makeprofile')) {
-                      return href;
-                  }
-              }
-          }
-          return null;
-      }, btn);
-      
       break;
   }
   
   if (!targetLikeButton) {
-      if (skippedCount > 0) {
-          log(`Đã quét thấy ${skippedCount} bài viết trên tường, nhưng TẤT CẢ đều đã được thả cảm xúc từ trước. Bot sẽ không tương tác đúp.`, "warn");
-      } else {
-          log("Không tìm thấy nút Like của bài viết nào trên trang. Có thể do mạng chậm, hãy thử lại.", "warn");
-      }
+      log("Không tìm thấy nút Like của bài viết nào trên trang. Có thể do mạng chậm, hãy thử lại.", "warn");
       return;
   }
+  
+  // Kiểm tra bài mới nhất đã được tương tác chưa
+  const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), targetLikeButton);
+  if (ariaLabel.includes('Gỡ') || ariaLabel.includes('Remove')) {
+      log("Bài viết MỚI NHẤT đã được tương tác rồi. Không làm gì thêm.", "info");
+      return;
+  }
+  
+  // Trích xuất URL bài viết để lưu lịch sử
+  targetPostUrl = await page.evaluate((el) => {
+      let container = el;
+      for (let i=0; i<10; i++) {
+          if (container.parentElement) container = container.parentElement;
+      }
+      const links = container.querySelectorAll('a[href]');
+      for (const link of links) {
+          const href = link.getAttribute('href');
+          if (href.includes('/posts/') || href.includes('/photo/') || href.includes('fbid=') || href.includes('/videos/') || href.includes('/reel/')) {
+              if (!href.includes('set=pb.') && !href.includes('set=a.') && !href.includes('makeprofile')) {
+                  return href;
+              }
+          }
+      }
+      return null;
+  }, targetLikeButton);
   
   log("Đã tìm thấy bài viết mới nhất chưa tương tác. Tiến hành thả cảm xúc.", "step");
   
@@ -201,58 +200,70 @@ async function processNewPosts(page, config) {
 
   await randomDelay(2, 3);
 
-  // 3. Find Comment button next to it
+  // 3. Tìm nút bình luận (chỉ 2 cấp trên từ nút Like)
   log("Đang tìm nút bình luận...", "info");
   const commentClicked = await page.evaluate((likeBtn) => {
       let wrapper = likeBtn;
-      for(let i=0; i<5; i++) {
+      // Chỉ cần lên 2-3 cấp là đến container chứa cả nút Like và nút Bình luận
+      for(let i=0; i<3; i++) {
           if (wrapper.parentElement) wrapper = wrapper.parentElement;
       }
-      const btn = wrapper.querySelector('div[aria-label="Bình luận"][role="button"], div[aria-label="Comment"][role="button"]');
-      if (btn) {
-          btn.click();
-          return true;
-      }
+      const btn = wrapper.querySelector(
+          'div[aria-label="Viết bình luận"][role="button"], ' +
+          'div[aria-label="Leave a comment"][role="button"], ' +
+          'div[aria-label="Bình luận"][role="button"], ' +
+          'div[aria-label="Comment"][role="button"]'
+      );
+      if (btn) { btn.click(); return true; }
       return false;
   }, targetLikeButton);
   
   if (commentClicked) {
+      // Chờ Facebook mở và auto-focus ô bình luận
       await randomDelay(2, 3);
       
       log("Đang nhập bình luận...", "info");
       const commentText = randomChoice(comments);
       
-      const commentBoxFocused = await page.evaluate((likeBtn) => {
-          let wrapper = likeBtn;
-          // Go high enough to encompass the comment box area
-          for(let i=0; i<8; i++) {
-              if (wrapper.parentElement) wrapper = wrapper.parentElement;
-          }
-          const box = wrapper.querySelector('div[role="textbox"][aria-label*="Bình luận"], div[role="textbox"][aria-label*="Comment"], div[role="textbox"][data-lexical-editor="true"]');
-          if (box) {
-              box.focus();
-              return true;
-          }
-          // Fallback to searching the whole page for the active element
-          const active = document.activeElement;
-          if (active && active.getAttribute('role') === 'textbox') {
-              return true; // it's already focused!
-          }
-          return false;
-      }, targetLikeButton);
+      // Lấy chính xác ô textbox đang được focus (Facebook tự động focus sau khi bấm Viết bình luận)
+      const activeElementHandle = await page.evaluateHandle(() => {
+          return document.activeElement;
+      });
 
-      if (commentBoxFocused) {
+      const isActiveTextbox = await page.evaluate((el) => {
+          return el && el.getAttribute('role') === 'textbox';
+      }, activeElementHandle);
+
+      if (isActiveTextbox) {
+          // Bấm thêm 1 lần cho chắc chắn
+          await activeElementHandle.click();
           await randomDelay(1, 2);
-          await page.keyboard.type(commentText, { delay: 50 });
+          await page.keyboard.type(commentText, { delay: 60 });
           await randomDelay(1, 2);
           await page.keyboard.press("Enter");
           log(`Đã bình luận thành công: "${commentText}"`, "success");
       } else {
-          // Fallback to direct typing, assuming Facebook auto-focused it
-          await page.keyboard.type(commentText, { delay: 50 });
-          await randomDelay(1, 2);
-          await page.keyboard.press("Enter");
-          log(`Đã gõ trực tiếp bình luận (fallback): "${commentText}"`, "success");
+          // Fallback: Tìm textbox gần nút Like nhất
+          log("Không thấy ô bình luận auto-focus, tìm xung quanh bài viết...", "warn");
+          const fallbackBox = await page.evaluateHandle((likeBtn) => {
+              let wrapper = likeBtn;
+              for(let i=0; i<8; i++) {
+                  if(wrapper.parentElement) wrapper = wrapper.parentElement;
+              }
+              return wrapper.querySelector('div[role="textbox"]');
+          }, targetLikeButton);
+          
+          const hasFallback = await page.evaluate(el => el !== null, fallbackBox);
+          if (hasFallback) {
+              await fallbackBox.click();
+              await randomDelay(1, 2);
+              await page.keyboard.type(commentText, { delay: 60 });
+              await randomDelay(1, 2);
+              await page.keyboard.press("Enter");
+              log(`Đã bình luận thành công (fallback): "${commentText}"`, "success");
+          } else {
+              log("Hoàn toàn không tìm thấy ô bình luận nào!", "error");
+          }
       }
   } else {
       log("Không tìm thấy nút Bình luận bên cạnh nút Like.", "error");
