@@ -1,0 +1,21 @@
+{
+  "name": "auto-engage-bot",
+  "version": "2.0.0",
+  "description": "Tự động theo dõi Facebook Page, thả cảm xúc và bình luận khi có bài viết mới.",
+  "main": "src/auto-engage.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/auto-engage.js",
+    "check": "node --check src/auto-engage.js && node --check src/utils.js && node --check src/store.js && node --check src/monitor.js && node --check src/actions.js"
+  },
+  "keywords": [
+    "puppeteer",
+    "facebook",
+    "auto-engage"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^24.9.0"
+  }
+}

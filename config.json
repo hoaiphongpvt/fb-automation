@@ -1,0 +1,12 @@
+{
+  "pageUrl": "https://www.facebook.com/profile.php?id=61583868984109",
+  "checkIntervalMinutes": 3,
+  "reaction": "love",
+  "comments": [
+    "Tuyệt vời 🥰"
+  ],
+  "delayBetweenActions": {
+    "minSeconds": 5,
+    "maxSeconds": 12
+  }
+}
