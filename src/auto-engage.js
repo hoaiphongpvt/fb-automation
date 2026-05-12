@@ -22,7 +22,8 @@ function printBanner(config) {
   console.log("╔══════════════════════════════════════════════╗");
   console.log("║     🤖 AUTO ENGAGEMENT BOT - Facebook       ║");
   console.log("╠══════════════════════════════════════════════╣");
-  console.log(`║  Page: ${config.pageUrl.substring(0, 37).padEnd(37)}║`);
+  const pagesText = Array.isArray(config.pageUrls) ? `${config.pageUrls.length} pages` : '1 page';
+  console.log(`║  Pages: ${pagesText.padEnd(36)}║`);
   console.log(`║  Cảm xúc: ${config.reaction.padEnd(34)}║`);
   console.log(`║  Kiểm tra mỗi: ${String(config.checkIntervalMinutes + " phút").padEnd(29)}║`);
   console.log(`║  Bài đã xử lý: ${String(store.getProcessedCount()).padEnd(29)}║`);
@@ -75,8 +76,8 @@ async function waitForManualLogin(page) {
   log("Đăng nhập thành công!", "success");
 }
 
-async function processNewPosts(page, config) {
-  const { pageUrl, reaction, comments, delayBetweenActions } = config;
+async function processNewPosts(page, pageUrl, config) {
+  const { reaction, comments, delayBetweenActions } = config;
 
   log("Đang mở trang: " + pageUrl, "step");
   await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -348,11 +349,16 @@ async function main() {
   const runCycle = async () => {
     cycleCount++;
     log(`\n${"═".repeat(50)}`, "info");
-    log(`Chu kỳ #${cycleCount} - Đang kiểm tra bài viết mới...`, "step");
+    log(`Chu kỳ #${cycleCount} - Đang kiểm tra các trang...`, "step");
     log(`${"═".repeat(50)}`, "info");
 
     try {
-      await processNewPosts(page, config);
+      const urls = Array.isArray(config.pageUrls) ? config.pageUrls : [config.pageUrl].filter(Boolean);
+      for (const url of urls) {
+        log(`\n>>> Xử lý trang: ${url}`, "info");
+        await processNewPosts(page, url, config);
+        await randomDelay(3, 5); // Chờ một chút trước khi sang trang tiếp theo
+      }
     } catch (err) {
       log(`Lỗi trong chu kỳ kiểm tra: ${err.message}`, "error");
     }
