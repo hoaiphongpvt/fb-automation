@@ -4,71 +4,80 @@ Tự động theo dõi Facebook Page, thả cảm xúc và bình luận khi có 
 
 ## Tính năng
 
-- ✅ Theo dõi 1 Facebook Page, kiểm tra bài viết mới theo chu kỳ
-- ✅ Tự động thả cảm xúc (Like, Love, Haha, Wow, Sad, Angry)
-- ✅ Tự động bình luận với nội dung tùy chỉnh
-- ✅ Lưu lại bài đã xử lý, tránh tương tác trùng
-- ✅ Delay ngẫu nhiên giữa các thao tác cho tự nhiên
-- ✅ Sử dụng browser profile để giữ phiên đăng nhập
+- ✅ Theo dõi **nhiều** Facebook Page cùng lúc.
+- ✅ Tự động thả cảm xúc (Like, Love, Haha, Wow, Sad, Angry).
+- ✅ Tự động bình luận với nội dung tùy chỉnh ngẫu nhiên.
+- ✅ Lưu lại lịch sử bài đã xử lý vào file JSON để tránh tương tác trùng.
+- ✅ Cơ chế cuộn trang và lọc bài viết thông minh (tránh tương tác nhầm vào bình luận hoặc bài share).
+- ✅ Delay ngẫu nhiên giữa các thao tác để giả lập người dùng thật.
+- ✅ Sử dụng Browser Profile để giữ phiên đăng nhập lâu dài.
 
-## Cài đặt
+## Cài đặt và Chạy
 
+1. **Cài đặt thư viện:**
 ```bash
 npm install
 ```
 
-## Cấu hình
+2. **Cấu hình:**
+Chỉnh sửa các thông số trong file `config.json` (xem chi tiết ở phần dưới).
 
-Chỉnh sửa file `config.json`:
+3. **Khởi chạy:**
+```bash
+npm start
+```
+
+**Lưu ý:** Lần đầu chạy, trình duyệt sẽ mở ra. Nếu chưa đăng nhập, bạn hãy tự tay đăng nhập vào Facebook, sau đó quay lại terminal nhấn **Enter**. Các lần sau bot sẽ tự động sử dụng phiên đăng nhập cũ.
+
+## Cấu hình (config.json)
 
 ```json
 {
-  "pageUrl": "https://www.facebook.com/profile.php?id=61583868984109",
-  "checkIntervalMinutes": 60,
+  "pageUrls": [
+    "https://www.facebook.com/profile.php?id=xx",
+    "https://www.facebook.com/profile.php?id=xxx"
+  ],
+  "checkIntervalMinutes": 5,
   "reaction": "love",
   "comments": [
-    "Tuyệt vời 🥰"
+    "Tuyệt vời 🥰",
+    "Bài viết hay quá!"
   ],
-  "maxPostsPerCheck": 3,
   "delayBetweenActions": {
     "minSeconds": 5,
-    "maxSeconds": 12
+    "maxSeconds": 10
   }
 }
 ```
 
 | Tham số | Mô tả |
 |---------|--------|
-| `pageUrl` | URL Facebook Page cần theo dõi |
-| `checkIntervalMinutes` | Thời gian giữa các lần kiểm tra (phút) |
+| `pageUrls` | Danh sách URL các Fanpage/Profile cần theo dõi |
+| `checkIntervalMinutes` | Thời gian nghỉ giữa các chu kỳ kiểm tra (phút) |
 | `reaction` | Loại cảm xúc: `like`, `love`, `haha`, `wow`, `sad`, `angry` |
-| `comments` | Danh sách bình luận (bot sẽ random chọn 1) |
-| `maxPostsPerCheck` | Số bài tối đa xử lý mỗi lần kiểm tra |
-| `delayBetweenActions` | Thời gian chờ giữa các thao tác (giây) |
+| `comments` | Danh sách các câu bình luận (Bot sẽ chọn ngẫu nhiên) |
+| `delayBetweenActions` | Khoảng thời gian chờ ngẫu nhiên giữa các bước (giây) |
 
-## Chạy
-
-```bash
-npm start
-```
-
-Lần đầu chạy, bot sẽ mở trình duyệt. Nếu chưa đăng nhập, hãy đăng nhập thủ công, sau đó nhấn Enter trong terminal. Phiên đăng nhập sẽ được lưu lại cho lần sau.
-
-## Cấu trúc
+## Cấu trúc thư mục
 
 ```
-src/
-├── auto-engage.js   # File chính, điều phối chương trình
-├── monitor.js       # Theo dõi page, phát hiện bài mới
-├── actions.js       # Thả cảm xúc & bình luận
-├── store.js         # Lưu trữ bài đã xử lý
-└── utils.js         # Tiện ích (delay, log, random)
+fb-automation/
+├── src/
+│   ├── auto-engage.js   # Logic chính điều khiển trình duyệt
+│   ├── utils.js         # Các hàm tiện ích (log, delay, xử lý URL)
+│   └── store.js         # Quản lý cơ sở dữ liệu bài viết đã tương tác
+├── data/                # Nơi lưu trữ file JSON lịch sử
+├── .browser-profile/    # Nơi lưu trữ cookie/session đăng nhập
+├── config.json          # File cấu hình của người dùng
+└── package.json         # Khai báo thư viện (Puppeteer)
 ```
 
-## Dừng bot
+## Lưu ý an toàn
 
-Nhấn `Ctrl+C` trong terminal để dừng bot an toàn.
+⚠️ Tool này sử dụng tự động hóa. Để tránh bị Facebook quét:
+1. Không nên đặt `checkIntervalMinutes` quá ngắn (nên từ 5-15 phút trở lên).
+2. Danh sách `comments` nên đa dạng nội dung.
+3. Luôn sử dụng Browser Profile để tránh phải đăng nhập lại nhiều lần dẫn đến checkpoint.
 
-## Lưu ý
-
-⚠️ Tool này sử dụng tự động hóa trình duyệt. Sử dụng với tần suất hợp lý để tránh bị hạn chế tài khoản.
+## Giấy phép
+MIT
