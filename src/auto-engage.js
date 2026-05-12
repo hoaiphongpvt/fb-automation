@@ -18,17 +18,18 @@ function loadConfig() {
 }
 
 function printBanner(config) {
-  console.log("");
-  console.log("╔══════════════════════════════════════════════╗");
-  console.log("║     🤖 AUTO ENGAGEMENT BOT - Facebook       ║");
-  console.log("╠══════════════════════════════════════════════╣");
-  const pagesText = Array.isArray(config.pageUrls) ? `${config.pageUrls.length} pages` : '1 page';
-  console.log(`║  Pages: ${pagesText.padEnd(36)}║`);
-  console.log(`║  Cảm xúc: ${config.reaction.padEnd(34)}║`);
-  console.log(`║  Kiểm tra mỗi: ${String(config.checkIntervalMinutes + " phút").padEnd(29)}║`);
-  console.log(`║  Bài đã xử lý: ${String(store.getProcessedCount()).padEnd(29)}║`);
-  console.log("╚══════════════════════════════════════════════╝");
-  console.log("");
+  const conf = config || {};
+  const pageUrls = conf.pageUrls || [];
+  const reaction = conf.reaction || "love";
+  const interval = conf.checkIntervalMinutes || 0;
+  const processedCount = store.getProcessedCount ? store.getProcessedCount() : 0;
+
+  console.log("\n--- FB AUTO ENGAGE BOT ---");
+  console.log(`- Pages: ${pageUrls.length}`);
+  console.log(`- Reaction: ${reaction}`);
+  console.log(`- Interval: ${interval} minutes`);
+  console.log(`- Processed: ${processedCount}`);
+  console.log("--------------------------\n");
 }
 
 async function checkLogin(page) {
@@ -329,7 +330,14 @@ async function main() {
     headless: false,
     defaultViewport: null,
     userDataDir: PROFILE_DIR,
-    args: ["--start-maximized", "--no-sandbox"]
+    args: [
+      "--start-maximized", 
+      "--no-sandbox", 
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu"
+    ]
   });
 
   const [page] = await browser.pages();
